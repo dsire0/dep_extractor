@@ -157,18 +157,18 @@ def print_audit_table(audit: "AuditData") -> None:
         return
 
     table = Table(
-        title="[bold]🖥️  System Audit[/bold]",
+        title="[bold cyan]System Audit[/bold cyan]",
         box=box.ROUNDED,
-        border_style="blue",
+        border_style="bright_blue",
         show_lines=False,
     )
     table.add_column("Property", style="bright_cyan")
     table.add_column("Value", style="white")
 
     table.add_row("Operating System", f"{audit.os} {audit.os_release}")
-    table.add_row("Windows Insider", "✅ Yes" if audit.is_insider else "No")
-    table.add_row("GINGER-class GPU", "✅ 4090/5090 detected" if audit.is_ginger_class else "No")
-    table.add_row("uv available", "✅ Yes" if audit.has_uv else "❌ No")
+    table.add_row("Windows Insider", "[bold green]YES[/bold green]" if audit.is_insider else "No")
+    table.add_row("GINGER-class GPU", "[bold green]YES[/bold green] (4090/5090 detected)" if audit.is_ginger_class else "No")
+    table.add_row("uv available", "[bold green]YES[/bold green]" if audit.has_uv else "[bold red]NO[/bold red]")
 
     if audit.gpus:
         gpu_str = " | ".join(f"{g.name} ({g.vram_gb}GB)" for g in audit.gpus)

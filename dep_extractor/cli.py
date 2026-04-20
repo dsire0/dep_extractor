@@ -185,18 +185,12 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Phase 2: Hardware Audit
     # ------------------------------------------------------------------
-    print_phase_header(2, "Hardware Audit", "🖥️")
+    print_phase_header(2, "Hardware Audit", "◇")
     audit = run_hardware_audit(python_executable=args.python)
     installed = get_installed_packages(python_executable=audit.python_executable)
 
-    console.print(
-        f"   Audit complete: [bright_cyan]{audit.os}[/bright_cyan] | "
-        f"[bright_cyan]{len(audit.gpus)} GPU(s)[/bright_cyan] | "
-        f"uv [bright_cyan]{'detected' if audit.has_uv else 'missing'}[/bright_cyan]"
-    )
-
-    if args.audit:
-        print_audit_table(audit)
+    # Always show audit results (Phase 2 core requirement)
+    print_audit_table(audit)
 
     # ------------------------------------------------------------------
     # Phase 3: Static Conflict Detection
@@ -210,7 +204,7 @@ def main() -> None:
     # ------------------------------------------------------------------
     extra_indices = suggest_best_indices(audit)
     if args.simulate:
-        print_phase_header(4, "SAT Solver Validation (uv pip compile)", "🔬")
+        print_phase_header(4, "SAT Solver Validation", "◌")
         if not audit.has_uv:
             console.print("[yellow]uv not found — skipping simulation.[/yellow]")
         else:
@@ -239,7 +233,7 @@ def main() -> None:
     # ------------------------------------------------------------------
     url_results: list = []
     if not args.quick and scan.online_urls:
-        print_phase_header(5, "URL Validation", "🌐")
+        print_phase_header(5, "URL Validation", "⊕")
         console.print(f"   Validating [cyan]{len(scan.online_urls)}[/cyan] URLs concurrently...")
         url_results = validate_urls_sync(scan.online_urls)
         print_url_validation_results(url_results)
@@ -254,7 +248,7 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Phase 4: Write Output
     # ------------------------------------------------------------------
-    print_phase_header(6, "Writing Combined Requirements", "📄")
+    print_phase_header(6, "Writing Combined Requirements", "▣")
     audit_report = AuditReport(
         untracked_wheels=untracked_names,
         conflict_causality=static_conflicts,
