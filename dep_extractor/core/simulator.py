@@ -59,7 +59,15 @@ def simulate_resolution(
     cmd = _build_compile_cmd(req_files, python_version, extra_indices, debug)
 
     if debug:
-        logger.debug("Running: %s", " ".join(str(c) for c in cmd))
+        files_display = [str(rf.parent.name) for rf in req_files[:5]]
+        if len(req_files) > 5:
+            files_display.append(f"... (+{len(req_files)-5} more)")
+        logger.debug(
+            "Running: uv pip compile on %d files: [%s] --python-version %s",
+            len(req_files),
+            ", ".join(files_display),
+            python_version,
+        )
 
     try:
         process = subprocess.run(
@@ -138,10 +146,22 @@ def parse_uv_causality(raw_error: str) -> list[ConflictReport]:
         re.IGNORECASE,
     )
 
-    for pattern in (pattern1, pattern2, pattern3):
+    # Pattern 4: "No matching distribution found for XXX"
+    pattern4 = re.compile(
+        r"No matching distribution found for ([a-zA-Z0-9_-]+)",
+        re.IGNORECASE,
+    )
+
+    # Pattern 5: "Failed to build wheel for XXX"
+    pattern5 = re.compile(
+        r"Failed to build wheel for ([a-zA-Z0-9_-]+)",
+        re.IGNORECASE,
+    )
+
+    for pattern in (pattern1, pattern2, pattern3, pattern4, pattern5):
         for match in pattern.finditer(raw_error):
             groups = match.groups()
-            if len(groups) >= 2:
+            if len(groups) >= 1:
                 pkg = groups[1] if len(groups) > 1 else groups[0]
                 spec = groups[2] if len(groups) > 2 else ""
                 key = f"{pkg}{spec}"
@@ -150,8 +170,8 @@ def parse_uv_causality(raw_error: str) -> list[ConflictReport]:
                     conflicts.append(
                         ConflictReport(
                             package=pkg.lower().replace("_", "-"),
-                            specs=[spec],
-                            nodes=[{"raw": match.group(0)}],
+                            specs=[spec] if spec else [],
+                            nodes=[{"raw": match.group(0).strip()}],
                             severity="hard",
                         )
                     )

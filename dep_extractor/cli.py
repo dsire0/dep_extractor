@@ -208,12 +208,13 @@ def main() -> None:
         if not audit.has_uv:
             console.print("[yellow]uv not found — skipping simulation.[/yellow]")
         else:
-            sim = simulate_resolution(
-                req_files=scan.req_files,
-                python_version=audit.python_target_version,
-                extra_indices=extra_indices,
-                debug=args.debug,
-            )
+            with console.status("[bold cyan]Resolving global SAT constraints with UV...[/bold cyan]", spinner="dots"):
+                sim = simulate_resolution(
+                    req_files=scan.req_files,
+                    python_version=audit.python_target_version,
+                    extra_indices=extra_indices,
+                    debug=args.debug,
+                )
             if sim.success:
                 console.print(
                     f"[bold green]✅ Resolution succeeded — "
@@ -221,7 +222,13 @@ def main() -> None:
                 )
                 audit.solved_map = sim.solved_map
             else:
-                print_conflict_tree(sim.conflicts)
+                if not sim.conflicts:
+                    console.print("[bold red]UV SAT solver failed with unknown error:[/bold red]")
+                    from rich.panel import Panel
+                    console.print(Panel(sim.raw_output.strip(), title="Raw UV Output", border_style="red"))
+                else:
+                    print_conflict_tree(sim.conflicts)
+                
                 console.print()
                 console.print(
                     "[bold red]SAT resolution failed. Fix conflicts above before installing.[/bold red]"
