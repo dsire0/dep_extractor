@@ -296,7 +296,7 @@ def main() -> None:
     # Phase 5 & 6: Installation (skipped with --no-install)
     # ------------------------------------------------------------------
     if not args.no_install:
-        summary = execute_phased_installation(audit, scan, installed)
+        summary = execute_phased_installation(audit, scan, installed, extra_indices)
         if not summary.success:
             console.print(
                 f"[bold yellow]⚠️  Installation completed with "

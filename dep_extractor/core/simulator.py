@@ -208,6 +208,10 @@ def _build_compile_cmd(
     if extra_indices:
         for idx in extra_indices:
             cmd.extend(["--extra-index-url", idx])
+        # If we have extra indices, we must use unsafe-best-match effectively
+        # to prevent UV from stopping at the first index that contains a package
+        # but lacks the required version (dependency confusion safety).
+        cmd.extend(["--index-strategy", "unsafe-best-match"])
 
     if debug:
         cmd.append("-v")

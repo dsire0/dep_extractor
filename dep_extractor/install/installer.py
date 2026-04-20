@@ -70,6 +70,7 @@ def execute_phased_installation(
     audit: AuditData,
     scan: ScanResult,
     installed: list[InstalledPackage],
+    extra_indices: list[str] | None = None,
 ) -> InstallSummary:
     """
     Orchestrate the full phased installation sequence.
@@ -140,7 +141,7 @@ def execute_phased_installation(
 
     if to_install:
         console.print(f"   Installing [cyan]{len(to_install)}[/cyan] standard packages...")
-        batch_ok = _batch_install(to_install, audit.python_executable)
+        batch_ok = _batch_install(to_install, audit.python_executable, extra_indices)
         if batch_ok:
             summary.base_installed = [r.name for r in to_install]
             print_success(f"Standard installation complete.")
@@ -183,7 +184,11 @@ def execute_phased_installation(
 # Private helpers
 # ---------------------------------------------------------------------------
 
-def _batch_install(reqs: list[NormalizedRequirement], python_executable: str) -> bool:
+def _batch_install(
+    reqs: list[NormalizedRequirement],
+    python_executable: str,
+    extra_indices: list[str] | None = None,
+) -> bool:
     """
     Install a list of standard requirements in a single uv batch call.
 
@@ -193,6 +198,7 @@ def _batch_install(reqs: list[NormalizedRequirement], python_executable: str) ->
     Args:
         reqs: List of requirements to install.
         python_executable: Path to the target python interpreter.
+        extra_indices: Optional hardware PyPI indices (e.g. for PyTorch).
 
     Returns:
         True on success.
@@ -210,10 +216,13 @@ def _batch_install(reqs: list[NormalizedRequirement], python_executable: str) ->
             tmp.write(content)
             tmp_path = tmp.name
 
-        subprocess.run(
-            ["uv", "pip", "install", "--python", python_executable, "-r", tmp_path],
-            check=True,
-        )
+        cmd = ["uv", "pip", "install", "--python", python_executable, "-r", tmp_path]
+        if extra_indices:
+            for idx in extra_indices:
+                cmd.extend(["--extra-index-url", idx])
+            cmd.extend(["--index-strategy", "unsafe-best-match"])
+
+        subprocess.run(cmd, check=True)
         return True
 
     except subprocess.CalledProcessError as exc:
