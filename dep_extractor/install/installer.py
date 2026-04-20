@@ -304,11 +304,17 @@ def _torch_sequential_install(
     current_idx = suggested_indices[0] if suggested_indices else None
 
     # Step 1: Attempt the locked install
+    skipped_in_this_pass = set()
+
     while True:
         console.print(f"   Using locked index: [cyan]{current_idx or 'Standard PyPI'}[/cyan]")
         success = True
+        failed_pkg = None
 
         for req in reqs:
+            if req.name in skipped_in_this_pass:
+                continue
+
             solved_ver = (solved_map or {}).get(req.name)
             req_str = f"{req.name}=={solved_ver}" if solved_ver and not req.is_url else str(req)
 
@@ -327,6 +333,23 @@ def _torch_sequential_install(
                 subprocess.run(cmd, env=pkg_env, check=True)
             except subprocess.CalledProcessError:
                 print_error(f"Failed to install {req.name} via {current_idx or 'PyPI'}")
+                failed_pkg = req.name
+                
+                # Special recovery for xformers
+                if failed_pkg == "xformers":
+                    console.print("\n   [bold yellow]⚠️  Action Required[/bold yellow]")
+                    console.print("   xformers failed but is optional.")
+                    print("   Drop xformers and continue? (y/N): ", end="", flush=True)
+                    try:
+                        drop_choice = input("").strip().lower()
+                    except (EOFError, KeyboardInterrupt):
+                        drop_choice = "n"
+                    
+                    if drop_choice in ("y", "yes"):
+                        print_warning("Dropping xformers from this installation pass.")
+                        skipped_in_this_pass.add("xformers")
+                        continue # Continue the loop for remaining packages
+
                 success = False
                 break
         
@@ -335,6 +358,7 @@ def _torch_sequential_install(
 
         # Handle failure: Interactive prompt
         console.print()
+        print_warning(f"Installation failed at package: [bold]{failed_pkg}[/bold]")
         print_warning("The current CUDA index failed to resolve the Batch.")
         console.print("   Possible alternatives:")
         for i, idx in enumerate(suggested_indices):

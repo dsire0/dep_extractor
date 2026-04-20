@@ -183,7 +183,7 @@ def _build_audit_section(
             lines.append(f"#   {m}\n")
 
     # Wheel compatibility
-    wheels = [r for r in url_results if getattr(r, "is_wheel", False)] # (if we had them in results)
+    wheels = [r for r in (url_results or []) if getattr(r, "is_wheel", False)] # (if we had them in results)
     # Actually we have specialized list in the caller. 
     # Let's just use the repo's current specialized state if possible, 
     # but the report receives only report and url_results.
