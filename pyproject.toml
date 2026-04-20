@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dep-extractor"
+version = "2.0.0"
+description = "ComfyUI Dependency Resolver Suite — modular, concurrent package"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+
+dependencies = [
+    "rich>=13.0",
+    "httpx>=0.25",
+    "packaging>=23.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+]
+
+[project.scripts]
+dep-extractor = "dep_extractor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dep_extractor*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--tb=short -q"
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["dep_extractor"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 70
