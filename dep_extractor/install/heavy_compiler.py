@@ -73,6 +73,10 @@ def install_heavy_package(
         return False
 
     console.print(f"\n[bold cyan]☢️  Heavy compiler: [white]{pkg_name}[/white][/bold cyan]")
+    if pkg_name in ("llama-cpp-python", "flash-attn", "deepspeed"):
+        console.print("   [bold yellow]⚠️  WARNING: This package is known to take 10-30 minutes to build.[/bold yellow]")
+        if pkg_name == "llama-cpp-python":
+            console.print("   [dim]Tip: If you want a pre-built wheel, check the official abetlen/llama-cpp-python releases.[/dim]")
 
     # Skip if already installed
     if pkg_name in installed_names:

@@ -87,6 +87,29 @@ HEAVY_COMPILERS: dict[str, HeavyCompilerConfig] = {
             "DISTUTILS_USE_SDK": "1",
         },
     ),
+    "llama-cpp-python": HeavyCompilerConfig(
+        requires_msvc=True,
+        requires_ninja=True,
+        requires_cmake=True,
+        env_vars={
+            "CMAKE_ARGS": "-DGGML_CUDA=on", # Default to CUDA build
+            "FORCE_CMAKE": "1",
+            "DISTUTILS_USE_SDK": "1",
+        },
+    ),
+    "insightface": HeavyCompilerConfig(
+        requires_msvc=True,
+        requires_ninja=True,
+        requires_cmake=False,
+    ),
+    "dlib": HeavyCompilerConfig(
+        requires_msvc=True,
+        requires_cmake=True,
+    ),
+    "sentencepiece": HeavyCompilerConfig(
+        requires_msvc=True,
+        requires_cmake=True,
+    ),
 }
 
 

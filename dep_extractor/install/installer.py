@@ -141,7 +141,7 @@ def execute_phased_installation(
 
     if to_install:
         console.print(f"   Installing [cyan]{len(to_install)}[/cyan] standard packages...")
-        batch_ok = _batch_install(to_install, audit.python_executable, extra_indices)
+        batch_ok = _batch_install(to_install, audit.python_executable, extra_indices, audit.solved_map)
         if batch_ok:
             summary.base_installed = [r.name for r in to_install]
             print_success(f"Standard installation complete.")
@@ -159,6 +159,8 @@ def execute_phased_installation(
 
     console.print()
     console.print(f"[bold bright_blue]☢️  Phase 6: Heavy Compiler Resolution ({len(heavy_reqs)} detected)[/bold bright_blue]")
+    console.print("   [dim]These packages often require long compilation times (up to 20 mins).[/dim]")
+    console.print("   [dim]You will be prompted for each one before the build starts.[/dim]")
 
     toolchain = probe_toolchain()
 
@@ -188,6 +190,7 @@ def _batch_install(
     reqs: list[NormalizedRequirement],
     python_executable: str,
     extra_indices: list[str] | None = None,
+    solved_map: dict[str, str] | None = None,
 ) -> bool:
     """
     Install a list of standard requirements in a single uv batch call.
@@ -199,13 +202,24 @@ def _batch_install(
         reqs: List of requirements to install.
         python_executable: Path to the target python interpreter.
         extra_indices: Optional hardware PyPI indices (e.g. for PyTorch).
+        solved_map: Mapping of package name to the version found by the SAT solver.
 
     Returns:
         True on success.
     """
     # Write to NamedTemporaryFile so we don't leave files behind on error
     try:
-        content = "\n".join(str(r) for r in reqs)
+        lines = []
+        for r in reqs:
+            # If we solved for a specific version, enforce it!
+            # Otherwise uv might skip already-installed versions that satisfy the lower bound.
+            solved_ver = (solved_map or {}).get(r.name)
+            if solved_ver and not r.is_url:
+                lines.append(f"{r.name}=={solved_ver}")
+            else:
+                lines.append(str(r))
+
+        content = "\n".join(lines)
         with NamedTemporaryFile(
             mode="w",
             suffix=".txt",
