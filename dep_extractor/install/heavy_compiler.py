@@ -43,9 +43,11 @@ def install_heavy_package(
     req: NormalizedRequirement,
     toolchain: ToolchainStatus,
     installed_names: set[str],
-) -> bool:
+    audit: "AuditData",
+) -> bool | None:
     """
     Orchestrate the complete heavy-compiler install flow for a single package.
+    Returns True if successful, False if failed, or None if user requested to skip all remaining.
 
     Phases:
       1. Already-installed check → skip
@@ -77,6 +79,20 @@ def install_heavy_package(
         console.print(f"   [dim]Already installed — skipping.[/dim]")
         return True
 
+    # User bypass prompt
+    print(f"   Install {pkg_name}? (Y/n/s=skip all): ", end="", flush=True)
+    try:
+        choice = input("").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        choice = "n"
+
+    if choice == "s":
+        console.print(f"   [yellow]Skipping all remaining heavy packages.[/yellow]")
+        return None
+    if choice not in ("", "y", "yes"):
+        console.print(f"   [yellow]Skipping {pkg_name} by user request.[/yellow]")
+        return False
+
     # Validate MSVC toolchain on Windows
     if config.requires_msvc and sys.platform == "win32":
         if not toolchain.has_msvc:
@@ -86,12 +102,12 @@ def install_heavy_package(
 
     # Validate Ninja
     if config.requires_ninja and not toolchain.has_ninja:
-        if not _auto_install_tool("Ninja"):
+        if not _auto_install_tool("Ninja", audit.python_executable):
             return False
 
     # Validate CMake
     if config.requires_cmake and not toolchain.has_cmake:
-        if not _auto_install_tool("CMake"):
+        if not _auto_install_tool("CMake", audit.python_executable):
             return False
 
     # Build the environment overlay
@@ -228,19 +244,20 @@ def _run_install(cmd: list[str], env: dict[str, str]) -> bool:
         return False
 
 
-def _auto_install_tool(tool_name: str) -> bool:
+def _auto_install_tool(tool_name: str, python_executable: str) -> bool:
     """
     Prompt user to auto-install a missing build tool (Ninja or CMake).
 
     Args:
         tool_name: Human-readable name ("Ninja" or "CMake").
+        python_executable: Path to target python.
 
     Returns:
         True if user agreed and installation succeeded.
     """
     pkg = tool_name.lower()
     print_warning(f"{tool_name} is required but not found.")
-    print(f"   Auto-install {tool_name} via pip? (Y/n): ", end="", flush=True)
+    print(f"   Auto-install {tool_name} via uv pip? (Y/n): ", end="", flush=True)
     try:
         choice = input("").strip().lower()
     except (EOFError, KeyboardInterrupt):
@@ -251,7 +268,7 @@ def _auto_install_tool(tool_name: str) -> bool:
 
     try:
         subprocess.run(
-            ["uv", "pip", "install", pkg],
+            ["uv", "pip", "install", "--python", python_executable, pkg],
             check=True,
         )
         print_success(f"{tool_name} installed.")

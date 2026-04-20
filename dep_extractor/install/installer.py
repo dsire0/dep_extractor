@@ -161,10 +161,18 @@ def execute_phased_installation(
 
     toolchain = probe_toolchain()
 
+    skip_all_heavy = False
     for req in heavy_reqs:
-        ok = install_heavy_package(req, toolchain, installed_names)
-        if ok:
+        if skip_all_heavy:
+            summary.failed.append(req.name)
+            continue
+
+        ok = install_heavy_package(req, toolchain, installed_names, audit)
+        if ok is True:
             summary.heavy_installed.append(req.name)
+        elif ok is None:
+            skip_all_heavy = True
+            summary.failed.append(req.name)
         else:
             summary.failed.append(req.name)
 

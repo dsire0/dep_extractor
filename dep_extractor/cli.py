@@ -189,6 +189,12 @@ def main() -> None:
     audit = run_hardware_audit(python_executable=args.python)
     installed = get_installed_packages(python_executable=audit.python_executable)
 
+    console.print(
+        f"   Audit complete: [bright_cyan]{audit.os}[/bright_cyan] | "
+        f"[bright_cyan]{len(audit.gpus)} GPU(s)[/bright_cyan] | "
+        f"uv [bright_cyan]{'detected' if audit.has_uv else 'missing'}[/bright_cyan]"
+    )
+
     if args.audit:
         print_audit_table(audit)
 

@@ -103,7 +103,7 @@ def scan_nodes(
     Discovery rules:
         - Scans only IMMEDIATE subdirectories of `root` (one level deep).
           This matches the ComfyUI custom node layout.
-        - Within each node dir, finds requirements.txt at any depth.
+        - Within each node dir, finds a single `requirements.txt` at the root.
         - Skips hidden dirs, __pycache__, and .disabled nodes.
     """
     if normalizer is None:
@@ -147,10 +147,10 @@ def _scan_node_dir(
     Mutates `result` in-place (performance: avoids rebuilding the list
     on every file). Since scan_nodes() is the sole caller, this is safe.
     """
-    req_files = [
-        p for p in node_dir.rglob("requirements.txt")
-        if not any(_should_skip_dir(part) for part in p.parts)
-    ]
+    req_files = []
+    main_req = node_dir / "requirements.txt"
+    if main_req.is_file():
+        req_files.append(main_req)
 
     for req_file in sorted(req_files):
         result.req_files.append(req_file)
