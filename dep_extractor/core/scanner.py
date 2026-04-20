@@ -178,6 +178,7 @@ def _process_req_file(
         return False
 
     found_any = False
+    for line in content.splitlines():
         req = normalizer.normalize(line, node_name)
         if req is None:
             continue
