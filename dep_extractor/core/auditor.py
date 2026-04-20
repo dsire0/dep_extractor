@@ -56,6 +56,9 @@ def run_hardware_audit(python_executable: str | None = None) -> AuditData:
     if python_executable:
         audit.python_executable = str(Path(python_executable).resolve())
 
+    # Detect actual Python version (major.minor.patch)
+    audit.python_version = _probe_python_version(audit.python_executable)
+
     # UV detection (The 'SAT Engine' prerequisite)
     audit.has_uv, audit.uv_path = _probe_uv()
 
@@ -180,6 +183,25 @@ def suggest_best_indices(audit: AuditData) -> list[str]:
 # Private sub-probes
 # ---------------------------------------------------------------------------
 
+def _probe_python_version(python_exe: str) -> str | None:
+    """
+    Runs `{python} --version` and extracts the version string.
+    Returns: "3.12.5" or similar.
+    """
+    try:
+        result = subprocess.run(
+            [python_exe, "--version"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        # Output is typically "Python 3.12.5"
+        match = re.search(r"Python\s+([\d\.]+)", result.stdout)
+        return match.group(1) if match else None
+    except Exception:
+        return None
+
+
 def _probe_uv() -> tuple[bool, str | None]:
     """
     Checks whether `uv` is available in PATH.
@@ -272,7 +294,9 @@ def _probe_nvidia_smi() -> tuple[list[GpuInfo], str | None]:
                 if len(parts) == 2:
                     name = parts[0].strip()
                     try:
-                        vram_gb = int(parts[1].strip()) // 1024
+                        # Use float division and round to nearest GB
+                        # (e.g., 24576 MiB -> 24.0 GB -> 24 GB)
+                        vram_gb = round(float(parts[1].strip()) / 1024)
                     except ValueError:
                         vram_gb = 0
                     gpus.append(GpuInfo(gpu_type="NVIDIA", name=name, vram_gb=vram_gb))
@@ -327,8 +351,8 @@ def _probe_cim_gpu() -> list[GpuInfo]:
         gpus = []
         for gpu in data:
             name = gpu.get("Name", "Unknown")
-            vram_raw = gpu.get("AdapterRAM") or 0
-            vram_gb = vram_raw // (1024 ** 3)
+            vram_raw = float(gpu.get("AdapterRAM") or 0)
+            vram_gb = round(vram_raw / (1024 ** 3))
             gpus.append(GpuInfo(gpu_type="Other", name=name, vram_gb=vram_gb))
         return gpus
 

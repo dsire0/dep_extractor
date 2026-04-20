@@ -148,6 +148,7 @@ class AuditData:
     uv_path: str | None = None
     python_executable: str = field(default_factory=lambda: sys.executable)
     terminal: str = "Unknown"
+    python_version: str | None = None
     solved_map: dict = field(default_factory=dict)         # pkg_name → solved_version
 
     @property
@@ -155,7 +156,12 @@ class AuditData:
         """
         Educational: GINGER Insider builds support Python 3.13 targets.
         Non-insider environments default to the stable 3.12 target.
+        If a specific python_version was detected, we return its major.minor.
         """
+        if self.python_version:
+            parts = self.python_version.split(".")
+            if len(parts) >= 2:
+                return f"{parts[0]}.{parts[1]}"
         return "3.13" if self.is_insider else "3.12"
 
 
