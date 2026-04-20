@@ -43,14 +43,15 @@ _SKIP_DIR_PATTERNS: frozenset[str] = frozenset({
 })
 
 
-def _should_skip_dir(d: Path) -> bool:
+def _should_skip_dir(d: Path | str) -> bool:
     """
     Returns True if the directory should be excluded from scanning.
 
     Educational: Matching on the directory NAME (not full path) keeps this
     predicate fast and consistent regardless of nesting depth.
     """
-    return d.name.startswith(".") or d.name in _SKIP_DIR_PATTERNS
+    name = d.name if isinstance(d, Path) else d
+    return name.startswith(".") or name in _SKIP_DIR_PATTERNS
 
 
 def read_file_safe(path: Path) -> str:
