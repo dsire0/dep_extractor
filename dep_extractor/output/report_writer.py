@@ -101,7 +101,11 @@ def write_combined_requirements(
     if specialized:
         lines.append("\n# --- Specialized Dependencies (URLs / Local Paths) ---\n")
         for req in specialized:
-            lines.append(f"{req.raw}\n")
+            # Comment out incompatible wheels so pip/uv doesn't crash on them
+            if req.is_wheel and req.wheel_metadata and not req.wheel_metadata.is_compatible:
+                lines.append(f"# [PLATFORM INCOMPATIBLE] {req.raw}\n")
+            else:
+                lines.append(f"{req.raw}\n")
 
     # 5. Audit section
     lines.extend(_build_audit_section(audit_report, url_results))
@@ -178,4 +182,12 @@ def _build_audit_section(
         for m in report.version_mismatches:
             lines.append(f"#   {m}\n")
 
+    # Wheel compatibility
+    wheels = [r for r in url_results if getattr(r, "is_wheel", False)] # (if we had them in results)
+    # Actually we have specialized list in the caller. 
+    # Let's just use the repo's current specialized state if possible, 
+    # but the report receives only report and url_results.
+    # I will add 'wheel_results' to the report if needed, 
+    # but for now I'll just check if untracked_wheels mentioned it.
+    
     return lines

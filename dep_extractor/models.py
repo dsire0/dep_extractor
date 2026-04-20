@@ -27,6 +27,19 @@ from typing import Literal
 # ---------------------------------------------------------------------------
 
 @dataclass
+class WheelMetadata:
+    """Parsed PEP 427 wheel tags and compatibility status."""
+    name: str
+    version: str
+    build: str | None
+    python_tags: list[str]
+    abi_tags: list[str]
+    platform_tags: list[str]
+    is_compatible: bool = True
+    compatibility_reason: str | None = None
+
+
+@dataclass
 class NormalizedRequirement:
     """
     A fully parsed and normalized dependency requirement.
@@ -38,6 +51,7 @@ class NormalizedRequirement:
       - `name`       : lowercase, hyphen-normalized (e.g. 'onnx-runtime')
       - `specifier`  : version constraint string (e.g. '>=1.2.0,<2.0')
       - `is_url`     : True for git+/http/local-path dependencies
+      - `is_wheel`   : True if the URL or path points to a .whl file
       - `is_heavy`   : True if this package requires MSVC/CUDA compilation
       - `source_node`: The custom_node folder name this requirement came from
     """
@@ -47,6 +61,8 @@ class NormalizedRequirement:
     is_url: bool
     is_heavy: bool
     source_node: str
+    is_wheel: bool = False
+    wheel_metadata: WheelMetadata | None = None
 
     def __str__(self) -> str:
         """Reconstructs the installable requirement string."""

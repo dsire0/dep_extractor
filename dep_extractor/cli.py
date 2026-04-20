@@ -193,6 +193,26 @@ def main() -> None:
     print_audit_table(audit)
 
     # ------------------------------------------------------------------
+    # Phase 2.5: Wheel Compatibility Audit
+    # ------------------------------------------------------------------
+    incompatible_wheels = []
+    for req in scan.specialized:
+        if req.is_wheel and req.wheel_metadata:
+            from dep_extractor.utils.wheel_parser import check_wheel_compatibility
+            is_comp, reason = check_wheel_compatibility(req.wheel_metadata, audit)
+            req.wheel_metadata.is_compatible = is_comp
+            req.wheel_metadata.compatibility_reason = reason
+            if not is_comp:
+                incompatible_wheels.append((req, reason))
+
+    if incompatible_wheels:
+        from dep_extractor.output.console import print_section, print_warning
+        print_section("Wheel Compatibility Check", "🛞")
+        for req, reason in incompatible_wheels:
+            print_warning(f"Incompatible wheel found: [white]{req.name}[/white]\n    {reason}")
+        console.print()
+
+    # ------------------------------------------------------------------
     # Phase 3: Static Conflict Detection
     # ------------------------------------------------------------------
     print_phase_header(3, "Static Conflict Analysis", "⚡")

@@ -124,13 +124,23 @@ class RequirementNormalizer:
 
         # URL-style requirements (git+, http://, local paths)
         if self._is_url(line):
-            name = self._extract_egg_name(line) or self._url_to_slug(line)
-            name = self._normalize_name(name)
+            from dep_extractor.utils.wheel_parser import parse_wheel_filename
+            is_wheel = ".whl" in line.lower()
+            wheel_meta = parse_wheel_filename(line) if is_wheel else None
+
+            if wheel_meta:
+                name = self._normalize_name(wheel_meta.name)
+            else:
+                name = self._extract_egg_name(line) or self._url_to_slug(line)
+                name = self._normalize_name(name)
+
             return NormalizedRequirement(
                 raw=raw_line.strip(),
                 name=name,
                 specifier="",
                 is_url=True,
+                is_wheel=is_wheel,
+                wheel_metadata=wheel_meta,
                 is_heavy=name in HEAVY_COMPILERS,
                 source_node=source_node,
             )
