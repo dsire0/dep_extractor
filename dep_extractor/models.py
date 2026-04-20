@@ -17,6 +17,7 @@ Educational: Using dataclasses over plain dicts provides:
 from __future__ import annotations
 
 import platform
+import sys
 from dataclasses import dataclass, field
 from typing import Literal
 
