@@ -189,17 +189,20 @@ def _probe_python_version(python_exe: str) -> str | None:
     Returns: "3.12.5" or similar.
     """
     try:
+        # Check standard version output
         result = subprocess.run(
             [python_exe, "--version"],
             capture_output=True,
             text=True,
-            check=True,
+            check=False,
         )
-        # Output is typically "Python 3.12.5"
-        match = re.search(r"Python\s+([\d\.]+)", result.stdout)
-        return match.group(1) if match else None
+        combined = (result.stdout + result.stderr).strip()
+        match = re.search(r"Python\s+([\d\.]+)", combined, re.IGNORECASE)
+        if match:
+            return match.group(1)
     except Exception:
-        return None
+        pass
+    return None
 
 
 def _probe_uv() -> tuple[bool, str | None]:

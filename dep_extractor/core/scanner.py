@@ -125,8 +125,8 @@ def scan_nodes(
         _scan_node_dir(node_dir, node_name, normalizer, result, seen_standard)
 
     logger.info(
-        "Scan complete — %d nodes, %d req files, %d packages, %d specialized",
-        len({r.source_node for r in result.packages}),
+        "Scan complete — %d nodes, %d req files (valid), %d packages, %d specialized",
+        len({r.source_node for r in result.packages} | {r.source_node for r in result.specialized}),
         len(result.req_files),
         len(result.packages),
         len(result.specialized),
@@ -147,14 +147,13 @@ def _scan_node_dir(
     Mutates `result` in-place (performance: avoids rebuilding the list
     on every file). Since scan_nodes() is the sole caller, this is safe.
     """
-    req_files = []
     main_req = node_dir / "requirements.txt"
     if main_req.is_file():
-        req_files.append(main_req)
-
-    for req_file in sorted(req_files):
-        result.req_files.append(req_file)
-        _process_req_file(req_file, node_name, normalizer, result, seen_standard)
+        # Process first, then decide to keep the file reference
+        # if and only if it contains actual dependencies.
+        had_content = _process_req_file(main_req, node_name, normalizer, result, seen_standard)
+        if had_content:
+            result.req_files.append(main_req)
 
 
 def _process_req_file(
@@ -175,10 +174,10 @@ def _process_req_file(
         URL is kept because git-pinned packages are opaque to pip/uv.
     """
     content = read_file_safe(req_file)
-    if not content:
-        return
+    if not content.strip():
+        return False
 
-    for line in content.splitlines():
+    found_any = False
         req = normalizer.normalize(line, node_name)
         if req is None:
             continue
@@ -196,7 +195,7 @@ def _process_req_file(
             if req.name not in seen_standard:
                 seen_standard[req.name] = req
                 result.packages.append(req)
-            else:
-                # Different specifier from a different node → potential conflict
-                # (reported later by conflict_detector; only tracking origin here)
-                pass
+        
+        found_any = True
+
+    return found_any

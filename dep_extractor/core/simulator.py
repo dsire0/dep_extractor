@@ -192,7 +192,18 @@ def _build_compile_cmd(
     """Constructs the uv pip compile command line."""
     cmd = ["uv", "pip", "compile"]
     cmd.extend(str(rf) for rf in req_files)
-    cmd.extend(["--python-version", python_version, "--universal", "--refresh"])
+    cmd.extend(["--python-version", python_version, "--refresh"])
+
+    # Only use --universal for modern stable Python (3.12+).
+    # For older versions (e.g. 3.10), we resolve strictly for the target
+    # environment to avoid conflict noise from 'other versions'.
+    try:
+        ver_major, ver_minor = map(int, python_version.split(".")[:2])
+        if ver_major > 3 or (ver_major == 3 and ver_minor >= 12):
+            cmd.append("--universal")
+    except (ValueError, IndexError):
+        # Fallback to absolute strict if version is weird
+        pass
 
     if extra_indices:
         for idx in extra_indices:
