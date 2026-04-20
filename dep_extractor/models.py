@@ -145,6 +145,7 @@ class AuditData:
     cuda_version: str | None = None
     has_uv: bool = False
     uv_path: str | None = None
+    python_executable: str = field(default_factory=lambda: sys.executable)
     terminal: str = "Unknown"
     solved_map: dict = field(default_factory=dict)         # pkg_name → solved_version
 

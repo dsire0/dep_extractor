@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 # Public API
 # ---------------------------------------------------------------------------
 
-def run_hardware_audit() -> AuditData:
+def run_hardware_audit(python_executable: str | None = None) -> AuditData:
     """
     Execute the full GINGER-standard hardware and environment probe.
 
@@ -52,6 +52,8 @@ def run_hardware_audit() -> AuditData:
         for any sub-probe that fails (EAFP pattern: log + continue).
     """
     audit = AuditData()
+    if python_executable:
+        audit.python_executable = str(Path(python_executable).resolve())
 
     # UV detection (The 'SAT Engine' prerequisite)
     audit.has_uv, audit.uv_path = _probe_uv()
@@ -73,19 +75,24 @@ def run_hardware_audit() -> AuditData:
     return audit
 
 
-def get_installed_packages() -> list[InstalledPackage]:
+def get_installed_packages(python_executable: str | None = None) -> list[InstalledPackage]:
     """
     Retrieve the current pip-installed package inventory.
 
-    Runs `pip list --format=json` in the active interpreter.
+    Runs `pip list --format=json` in the specified or active interpreter.
+
+    Args:
+        python_executable: Optional path to a specific python to probe.
+                          Defaults to sys.executable if None.
 
     Returns:
         list[InstalledPackage]: Typed list of installed packages.
         Returns empty list on failure (logs warning — does not crash).
     """
+    python_exe = python_executable or sys.executable
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "list", "--format=json"],
+            [python_exe, "-m", "pip", "list", "--format=json"],
             capture_output=True,
             text=True,
             check=True,

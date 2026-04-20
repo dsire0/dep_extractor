@@ -50,6 +50,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Root directory to scan for custom node requirement files (default: current dir)",
     )
     parser.add_argument(
+        "--python",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Path to target Python interpreter (e.g. path/to/venv/Scripts/python.exe)",
+    )
+    parser.add_argument(
         "--output",
         type=str,
         default="combined_requirements.txt",
@@ -179,8 +186,8 @@ def main() -> None:
     # Phase 2: Hardware Audit
     # ------------------------------------------------------------------
     print_phase_header(2, "Hardware Audit", "🖥️")
-    audit = run_hardware_audit()
-    installed = get_installed_packages()
+    audit = run_hardware_audit(python_executable=args.python)
+    installed = get_installed_packages(python_executable=audit.python_executable)
 
     if args.audit:
         print_audit_table(audit)

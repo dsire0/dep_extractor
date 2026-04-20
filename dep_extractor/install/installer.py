@@ -140,7 +140,7 @@ def execute_phased_installation(
 
     if to_install:
         console.print(f"   Installing [cyan]{len(to_install)}[/cyan] standard packages...")
-        batch_ok = _batch_install(to_install)
+        batch_ok = _batch_install(to_install, audit.python_executable)
         if batch_ok:
             summary.base_installed = [r.name for r in to_install]
             print_success(f"Standard installation complete.")
@@ -175,12 +175,16 @@ def execute_phased_installation(
 # Private helpers
 # ---------------------------------------------------------------------------
 
-def _batch_install(reqs: list[NormalizedRequirement]) -> bool:
+def _batch_install(reqs: list[NormalizedRequirement], python_executable: str) -> bool:
     """
     Install a list of standard requirements in a single uv batch call.
 
     Writes requirements to a temp file and calls `uv pip install -r`.
     This is significantly faster than one pip call per package.
+
+    Args:
+        reqs: List of requirements to install.
+        python_executable: Path to the target python interpreter.
 
     Returns:
         True on success.
@@ -199,7 +203,7 @@ def _batch_install(reqs: list[NormalizedRequirement]) -> bool:
             tmp_path = tmp.name
 
         subprocess.run(
-            ["uv", "pip", "install", "--python", sys.executable, "-r", tmp_path],
+            ["uv", "pip", "install", "--python", python_executable, "-r", tmp_path],
             check=True,
         )
         return True
