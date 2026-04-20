@@ -92,7 +92,8 @@ HEAVY_COMPILERS: dict[str, HeavyCompilerConfig] = {
         requires_ninja=True,
         requires_cmake=True,
         env_vars={
-            "CMAKE_ARGS": "-DGGML_CUDA=on", # Default to CUDA build
+            # We set both modern and legacy flags for maximum compatibility
+            "CMAKE_ARGS": "-DGGML_CUDA=on -DLLAMA_CUBLAS=on",
             "FORCE_CMAKE": "1",
             "DISTUTILS_USE_SDK": "1",
         },
@@ -111,6 +112,20 @@ HEAVY_COMPILERS: dict[str, HeavyCompilerConfig] = {
         requires_cmake=True,
     ),
 }
+
+
+# ---------------------------------------------------------------------------
+# Torch Suite Isolation
+# ---------------------------------------------------------------------------
+
+# Educational: The "Torch Suite" consists of packages that MUST share a
+# consistent CUDA suffix (+cu121, +cu124, etc.). To prevent version mismatch
+# errors (e.g. torch 13.0 vs torchaudio 12.8), these are installed in a
+# separate, isolated batch using a single hardware index URL.
+TORCH_SUITE_PREFIXES: frozenset[str] = frozenset({
+    "torch", "torchvision", "torchaudio", "xformers",
+})
+
 
 
 # ---------------------------------------------------------------------------

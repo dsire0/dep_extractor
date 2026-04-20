@@ -115,7 +115,7 @@ def install_heavy_package(
             return False
 
     # Build the environment overlay
-    build_env = _build_env(toolchain, config, pkg_name)
+    build_env = get_build_env(toolchain, config, pkg_name)
 
     return _try_install_with_fallback(req, pkg_name, build_env)
 
@@ -132,9 +132,9 @@ def auto_install_ready_for_heavy(toolchain: ToolchainStatus) -> bool:
 # Private helpers
 # ---------------------------------------------------------------------------
 
-def _build_env(
+def get_build_env(
     toolchain: ToolchainStatus,
-    config,  # HeavyCompilerConfig
+    config: "HeavyCompilerConfig",
     pkg_name: str,
 ) -> dict[str, str]:
     """
@@ -152,10 +152,12 @@ def _build_env(
     if toolchain.vcvars_env:
         env.update(toolchain.vcvars_env)
 
-    # Apply package-specific env vars (only add, don't override vcvars)
+    # Apply package-specific env vars (CRITICAL: Hard override to ensure build flags apply)
+    # Educational: We use a hard override here because the user may have generic
+    # environment variables set in their shell that would otherwise block
+    # build-critical flags (like -DGGML_CUDA=on) if we checked for 'k not in env'.
     for k, v in config.env_vars.items():
-        if k not in env:
-            env[k] = v
+        env[k] = v
 
     # MSVC monkey-patch: always force DISTUTILS to use SDK cl.exe
     env["DISTUTILS_USE_SDK"] = "1"
