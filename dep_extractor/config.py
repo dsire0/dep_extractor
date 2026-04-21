@@ -93,7 +93,7 @@ HEAVY_COMPILERS: dict[str, HeavyCompilerConfig] = {
         requires_cmake=True,
         env_vars={
             # We set both modern and legacy flags for maximum compatibility
-            "CMAKE_ARGS": "-DGGML_CUDA=on -DLLAMA_CUBLAS=on",
+            "CMAKE_ARGS": "-DGGML_CUDA=on -DLLAMA_CUBLAS=on -DLLAMA_CUDA=on",
             "FORCE_CMAKE": "1",
             "DISTUTILS_USE_SDK": "1",
         },
@@ -122,7 +122,7 @@ HEAVY_COMPILERS: dict[str, HeavyCompilerConfig] = {
 # consistent CUDA suffix (+cu121, +cu124, etc.). To prevent version mismatch
 # errors (e.g. torch 13.0 vs torchaudio 12.8), these are installed in a
 # separate, isolated batch using a single hardware index URL.
-TORCH_SUITE_PREFIXES: frozenset[str] = frozenset({
+TORCH_SUITE_PACKAGES: frozenset[str] = frozenset({
     "torch", "torchvision", "torchaudio", "xformers",
 })
 
@@ -174,6 +174,24 @@ CUDA_INDEX_MAP: dict[float, str] = {
     12.4: "https://download.pytorch.org/whl/cu124",
     12.1: "https://download.pytorch.org/whl/cu121",
     11.8: "https://download.pytorch.org/whl/cu118",
+}
+
+# Educational: llama-cpp-python pre-built wheels index URL Map.
+# We match down sequentially to avoid a 10-30 minute MSVC compilation.
+# Usage: iterate in descending key order; first match wins.
+LLAMA_CU_INDEX_MAP: dict[float, str] = {
+    13.0: "https://abetlen.github.io/llama-cpp-python/whl/cu130",
+    12.8: "https://abetlen.github.io/llama-cpp-python/whl/cu128",
+    12.7: "https://abetlen.github.io/llama-cpp-python/whl/cu127",
+    12.6: "https://abetlen.github.io/llama-cpp-python/whl/cu126",
+    12.5: "https://abetlen.github.io/llama-cpp-python/whl/cu125",
+    12.4: "https://abetlen.github.io/llama-cpp-python/whl/cu124",
+    12.3: "https://abetlen.github.io/llama-cpp-python/whl/cu123",
+    12.2: "https://abetlen.github.io/llama-cpp-python/whl/cu122",
+    12.1: "https://abetlen.github.io/llama-cpp-python/whl/cu121",
+    11.8: "https://abetlen.github.io/llama-cpp-python/whl/cu118",
+    11.7: "https://abetlen.github.io/llama-cpp-python/whl/cu117",
+    11.6: "https://abetlen.github.io/llama-cpp-python/whl/cu116",
 }
 
 

@@ -23,13 +23,14 @@ Key improvements:
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from dep_extractor.config import HEAVY_COMPILERS, TORCH_SUITE_PREFIXES
+from dep_extractor.config import HEAVY_COMPILERS, TORCH_SUITE_PACKAGES
 from dep_extractor.core.auditor import suggest_best_indices
 from dep_extractor.install.heavy_compiler import get_build_env, install_heavy_package
 from dep_extractor.install.toolchain import probe_toolchain
@@ -114,7 +115,7 @@ def execute_phased_installation(
     
     torch_reqs = [
         r for r in all_reqs
-        if any(r.name.startswith(p) for p in TORCH_SUITE_PREFIXES)
+        if r.name in TORCH_SUITE_PACKAGES
     ]
     
     remaining_reqs = [r for r in all_reqs if r not in torch_reqs]
@@ -145,15 +146,65 @@ def execute_phased_installation(
     # ------------------------------------------------------------------
     # Phase 5.5: Torch Suite Dependencies (CUDA Consistency Lock)
     # ------------------------------------------------------------------
-    to_install_torch = _filter_satisfied(torch_reqs, installed_map, audit)
+    # Determine the "Target Variant" based on Hardware Audit recommendations
+    indices = suggest_best_indices(audit)
+    target_variant = None
+    if indices:
+        # Extract cuXXX suffix from the top index URL
+        # e.g. https://.../cu130 -> cu130
+        primary_idx = indices[0]
+        if "/cu" in primary_idx:
+            target_variant = primary_idx.split("/")[-1]
+        elif "/rocm" in primary_idx:
+            target_variant = primary_idx.split("/")[-1]
+
+    # Detect existing mismatches for warning purposes
+    current_torch_variants = _detect_torch_variants(installed)
+    
+    # Check if any installed package differs from our target variant
+    mismatches = {
+        name: var for name, var in current_torch_variants.items() 
+        if target_variant and var != target_variant
+    }
+
+    # Enforce parity: if an installed torch-suite package is mismatched but not 
+    # explicitly requested by any node, add it to torch_reqs to force its re-installation
+    for name in mismatches.keys():
+        if not any(r.name == name for r in torch_reqs):
+            inst_ver = installed_map.get(name, "")
+            base_ver = inst_ver.split("+")[0] if "+" in inst_ver else inst_ver
+            spec = f"=={base_ver}" if base_ver else ""
+            torch_reqs.append(NormalizedRequirement(
+                raw=f"{name}{spec}",
+                name=name,
+                specifier=spec,
+                is_url=False,
+                is_heavy=False,
+                source_node="parity-enforcement"
+            ))
+
+    if mismatches or len(set(current_torch_variants.values())) > 1:
+        console.print()
+        print_warning("⚠️  CUDA/ROCm version mismatch or hardware misalignment detected in Torch Suite!")
+        console.print(f"      [bright_green]Target Alignment[/bright_green]: +{target_variant or 'standard'}")
+        
+        for name, var in current_torch_variants.items():
+            status = "[red]MISMATCH[/red]" if target_variant and var != target_variant else "[green]OK[/green]"
+            console.print(f"      {status} [magenta]{name}[/magenta]: +{var}")
+        
+        console.print("   [dim]Parity will be enforced by re-installing mismatched packages from the correct index.[/dim]")
+
+    # Filter with target variant map
+    target_map = {name: target_variant for name in TORCH_SUITE_PACKAGES} if target_variant else {}
+    to_install_torch = _filter_satisfied(torch_reqs, installed_map, audit, target_suite_variants=target_map)
+
+    console.print()
+    console.print("[bold bright_blue]🔥 Phase 5.5: Torch Suite (CUDA Isolation)[/bold bright_blue]")
 
     if to_install_torch:
-        console.print()
-        console.print("[bold bright_blue]🔥 Phase 5.5: Torch Suite (CUDA Isolation)[/bold bright_blue]")
         console.print("   [dim]Locking a single index for all torch-related packages to prevent CUDA mismatch.[/dim]")
 
-        # Get suggested indices from hardware audit
-        indices = suggest_best_indices(audit)
+        # Get suggested indices from hardware audit (already computed above)
         if not indices:
             print_warning("No hardware-specific indices suggested. Falling back to default PyPI.")
             indices = [None]  # type: ignore
@@ -173,25 +224,30 @@ def execute_phased_installation(
             summary.failed.extend(r.name for r in to_install_torch)
             print_error("Torch Suite installation failed or was skipped.")
     else:
-        if torch_reqs:
-            print_success("All Torch Suite packages already satisfied.")
+        print_success("All Torch Suite packages already satisfied.")
 
     # ------------------------------------------------------------------
     # Phase 6: Heavy compiler packages
     # ------------------------------------------------------------------
-    if not heavy_reqs:
-        return summary
+    # Educational: We apply _filter_satisfied here as well for UI consistency,
+    # so that already-satisfied packages don't even trigger the "☢️ Phase 6" header
+    # or the heavy package warnings.
+    to_install_heavy = _filter_satisfied(heavy_reqs, installed_map, audit)
 
     console.print()
-    console.print(f"[bold bright_blue]☢️  Phase 6: Heavy Compiler Resolution ({len(heavy_reqs)} detected)[/bold bright_blue]")
+    console.print(f"[bold bright_blue]☢️  Phase 6: Heavy Compiler Resolution[/bold bright_blue]")
+
+    if not to_install_heavy:
+        print_success("All heavy compiler packages already satisfied.")
+        return summary
 
     skip_all_heavy = False
-    for req in heavy_reqs:
+    for req in to_install_heavy:
         if skip_all_heavy:
             summary.failed.append(req.name)
             continue
 
-        ok = install_heavy_package(req, toolchain, installed_names, audit)
+        ok = install_heavy_package(req, toolchain, installed_map, audit)
         if ok is True:
             summary.heavy_installed.append(req.name)
         elif ok is None:
@@ -211,9 +267,12 @@ def _filter_satisfied(
     reqs: list[NormalizedRequirement],
     installed_map: dict[str, str],
     audit: AuditData,
+    target_suite_variants: dict[str, str] | None = None,
 ) -> list[NormalizedRequirement]:
     """Return a list of requirements that are NOT already satisfied."""
     to_install = []
+    target_suite_variants = target_suite_variants or {}
+
     for req in sorted(reqs, key=lambda r: r.name):
         inst_ver = installed_map.get(req.name)
         is_installed = req.name in installed_map
@@ -223,10 +282,25 @@ def _filter_satisfied(
         solved_ver = audit.solved_map.get(req.name)
         matches_solved = (inst_ver == solved_ver) if (is_installed and solved_ver) else True
 
-        if not (is_installed and meets_spec and matches_solved):
+        # NEW: Check for Torch Suite variant parity
+        # We search prefix match in target_suite_variants
+        # e.g. req.name='torchvision', target_suite_variants={'torch': 'cu124'}
+        variant_mismatch = False
+        if is_installed:
+            for prefix, target_var in target_suite_variants.items():
+                if req.name.startswith(prefix):
+                    curr_var = inst_ver.split("+")[-1] if "+" in inst_ver else ""
+                    if curr_var != target_var:
+                        variant_mismatch = True
+                        break
+
+        if not (is_installed and meets_spec and matches_solved) or variant_mismatch:
             to_install.append(req)
             if is_installed:
-                reason = "version mismatch" if not meets_spec else "differs from solved"
+                if variant_mismatch:
+                    reason = f"variant mismatch (want +{target_var})"
+                else:
+                    reason = "version mismatch" if not meets_spec else "differs from solved"
                 console.print(
                     f"   [yellow]Mismatch[/yellow] {req.name}: "
                     f"installed={inst_ver} required={req.specifier or 'any'} "
@@ -289,6 +363,21 @@ def _batch_install(
                 pass
 
 
+def _detect_torch_variants(installed: list[InstalledPackage]) -> dict[str, str]:
+    """
+    Scans installed packages for Torch Suite entries and extracts suffixes.
+    Returns: mapping of normalized_name -> suffix (e.g., 'cu121')
+    """
+    variants = {}
+    from dep_extractor.config import TORCH_SUITE_PACKAGES
+    for p in installed:
+        name = p.normalized_name
+        if name in TORCH_SUITE_PACKAGES:
+            if "+" in p.version:
+                variants[name] = p.version.split("+")[-1]
+    return variants
+
+
 def _torch_sequential_install(
     reqs: list[NormalizedRequirement],
     python_executable: str,
@@ -302,8 +391,12 @@ def _torch_sequential_install(
     """
     # Start with the best suggested index
     current_idx = suggested_indices[0] if suggested_indices else None
+    
+    # Priority 1: User choice for specific variant if multiple are available
+    # For now, we rely on the index URL to provide the variant.
+    # But if the user has a specific preference, we could potentially 
+    # append it to the req_str.
 
-    # Step 1: Attempt the locked install
     skipped_in_this_pass = set()
 
     while True:
@@ -324,9 +417,12 @@ def _torch_sequential_install(
                 config = HEAVY_COMPILERS[req.name]
                 pkg_env = get_build_env(toolchain, config, req.name)
 
-            cmd = ["uv", "pip", "install", "--python", python_executable, req_str]
+            # uv pip install - force reinstall of the specific package so it pulls the variant
+            cmd = ["uv", "pip", "install", "--python", python_executable, "--reinstall-package", req.name, req_str]
             if current_idx:
                 cmd.extend(["--index-url", current_idx])
+                # Ensure we prioritise the hardware index
+                cmd.extend(["--index-strategy", "unsafe-best-match"])
 
             console.print(f"   -> [dim]Installing {req_str}...[/dim]")
             try:

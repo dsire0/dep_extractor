@@ -28,8 +28,8 @@ import shutil
 import subprocess
 import sys
 
-from dep_extractor.config import HEAVY_COMPILERS
-from dep_extractor.models import NormalizedRequirement, ToolchainStatus
+from dep_extractor.config import HEAVY_COMPILERS, LLAMA_CU_INDEX_MAP
+from dep_extractor.models import NormalizedRequirement, ToolchainStatus, _version_satisfies
 from dep_extractor.output.console import console, print_error, print_success, print_warning
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 def install_heavy_package(
     req: NormalizedRequirement,
     toolchain: ToolchainStatus,
-    installed_names: set[str],
+    installed_map: dict[str, str],
     audit: "AuditData",
 ) -> bool | None:
     """
@@ -50,38 +50,50 @@ def install_heavy_package(
     Returns True if successful, False if failed, or None if user requested to skip all remaining.
 
     Phases:
-      1. Already-installed check → skip
-      2. Toolchain validation → abort if missing critical tool
-      3. Environment injection (vcvars + package-specific env_vars)
+      0. Already-satisfied check → skip immediately (silent)
+      1. Toolchain validation → abort if missing critical tool
+      2. Environment injection (vcvars + package-specific env_vars)
+      3. Dynamic variant labeling ([GPU/CUDA], [GPU/ROCm], etc.)
       4. Optional auto-install of Ninja / CMake if missing
-      5. Build attempt via `uv pip install --no-build-isolation`
+      5. Build attempt via `uv pip install --no-build-isolation --no-binary :all:`
       6. Fallback to direct `pip install --no-build-isolation`
       7. DeepSpeed-specific OPS retry without DS_BUILD_OPS=1
 
     Args:
         req:              The heavy requirement to install.
         toolchain:        Pre-probed toolchain status.
-        installed_names:  Set of already-installed normalized package names.
+        installed_map:    Map of normalized_name -> installed version.
+        audit:            Populated AuditData.
 
     Returns:
         True if installed successfully, False on total failure.
     """
     pkg_name = req.name
+    
+    # ----------------------------------------------------------------------
+    # Phase 0: Silent satisfaction check
+    # ----------------------------------------------------------------------
+    # Educational: We check this before ANY console output to avoid the 
+    # "False Positive" warnings for packages already handled or satisfied.
+    inst_ver = installed_map.get(pkg_name)
+    if inst_ver and _version_satisfies(inst_ver, req.specifier):
+        logger.debug("Heavy package %s already satisfied (version=%s)", pkg_name, inst_ver)
+        return True
+
     config = HEAVY_COMPILERS.get(pkg_name)
     if config is None:
         logger.warning("No HEAVY_COMPILERS entry for %s", pkg_name)
         return False
 
-    console.print(f"\n[bold cyan]☢️  Heavy compiler: [white]{pkg_name}[/white][/bold cyan]")
+    # Variant determination for UI
+    variant = _get_variant_label(config)
+    variant_text = f" [bold magenta]{variant}[/bold magenta]" if variant else ""
+
+    console.print(f"\n[bold cyan]☢️  Heavy compiler: [white]{pkg_name}[/white]{variant_text}[/bold cyan]")
     if pkg_name in ("llama-cpp-python", "flash-attn", "deepspeed"):
         console.print("   [bold yellow]⚠️  WARNING: This package is known to take 10-30 minutes to build.[/bold yellow]")
         if pkg_name == "llama-cpp-python":
             console.print("   [dim]Tip: If you want a pre-built wheel, check the official abetlen/llama-cpp-python releases.[/dim]")
-
-    # Skip if already installed
-    if pkg_name in installed_names:
-        console.print(f"   [dim]Already installed — skipping.[/dim]")
-        return True
 
     # User bypass prompt
     print(f"   Install {pkg_name}? (Y/n/s=skip all): ", end="", flush=True)
@@ -117,7 +129,7 @@ def install_heavy_package(
     # Build the environment overlay
     build_env = get_build_env(toolchain, config, pkg_name)
 
-    return _try_install_with_fallback(req, pkg_name, build_env)
+    return _try_install_with_fallback(req, pkg_name, build_env, audit)
 
 
 def auto_install_ready_for_heavy(toolchain: ToolchainStatus) -> bool:
@@ -196,6 +208,7 @@ def _try_install_with_fallback(
     req: NormalizedRequirement,
     pkg_name: str,
     build_env: dict[str, str],
+    audit: "AuditData",
 ) -> bool:
     """
     Attempt uv install → pip fallback → DeepSpeed OPS-off retry.
@@ -208,8 +221,42 @@ def _try_install_with_fallback(
     Returns True if any attempt succeeds, False if all fail.
     """
     req_str = str(req)
-    base_cmd_uv = ["uv", "pip", "install", "--python", sys.executable, "--no-build-isolation", req_str]
-    base_cmd_pip = [sys.executable, "-m", "pip", "install", "--no-build-isolation", req_str]
+    # Educational: We use --no-binary :all: for heavy compilers to ENSURE that
+    # any injected environment variables (like -DGGML_CUDA=on) are actually 
+    # used by forcing a source build, even if a CPU wheel exists on PyPI.
+    base_cmd_uv = [
+        "uv", "pip", "install", 
+        "--python", audit.python_executable, 
+        "--no-build-isolation", 
+        "--no-binary", pkg_name, # Only for THIS package to avoid breaking other deps
+        req_str
+    ]
+    base_cmd_pip = [
+        audit.python_executable, "-m", "pip", "install", 
+        "--no-build-isolation", 
+        "--no-binary", pkg_name,
+        req_str
+    ]
+
+    # Pre-built wheels optimization for llama-cpp-python
+    if pkg_name == "llama-cpp-python" and audit.cuda_version:
+        try:
+            v_float = float(audit.cuda_version)
+            for threshold in sorted(LLAMA_CU_INDEX_MAP.keys(), reverse=True):
+                if v_float >= threshold:
+                    index_url = LLAMA_CU_INDEX_MAP[threshold]
+                    console.print(f"   [bright_green]Found valid pre-built wheel index:[/bright_green] {index_url}")
+                    # Allow binary from the extra index url (removes --no-binary pkg_name)
+                    base_cmd_uv.remove("--no-binary")
+                    base_cmd_uv.remove(pkg_name)
+                    base_cmd_pip.remove("--no-binary")
+                    base_cmd_pip.remove(pkg_name)
+                    
+                    base_cmd_uv.extend(["--extra-index-url", index_url, "--index-strategy", "unsafe-best-match"])
+                    base_cmd_pip.extend(["--extra-index-url", index_url])
+                    break
+        except (ValueError, TypeError):
+            pass
 
     # Attempt 1: uv
     console.print(f"   Initiating build via [cyan]uv[/cyan] for {req_str}...")
@@ -228,13 +275,35 @@ def _try_install_with_fallback(
         console.print("   [yellow]Attempting recovery: DS_BUILD_OPS=0...[/yellow]")
         recovery_env = build_env.copy()
         recovery_env["DS_BUILD_OPS"] = "0"
-        uv_cmd = ["uv", "pip", "install", "--python", sys.executable, "--no-build-isolation", req_str]
+        uv_cmd = ["uv", "pip", "install", "--python", audit.python_executable, "--no-build-isolation", req_str]
         if _run_install(uv_cmd, recovery_env):
             print_success(f"Installed {req_str} (OPS disabled)")
             return True
 
     print_error(f"Total failure: could not install {req_str}")
     return False
+
+
+def _get_variant_label(config: "HeavyCompilerConfig") -> str | None:
+    """
+    Inspect env_vars to determine the build variant (GPU, ROCm, etc.).
+    """
+    env_str = str(config.env_vars).upper()
+    cmake_args = config.env_vars.get("CMAKE_ARGS", "").upper()
+    
+    # Generic GPU/CUDA detection
+    if any(k in env_str or k in cmake_args for k in ("CUDA", "CUBLAS", "NVCC", "NVIDIA")):
+        return "[GPU/CUDA]"
+    
+    # AMD/ROCm detection
+    if any(k in env_str or k in cmake_args for k in ("ROCM", "HIP", "AMD")):
+        return "[GPU/ROCm]"
+    
+    # Metal/Apple detection
+    if "METAL" in env_str or "METAL" in cmake_args:
+        return "[GPU/METAL]"
+        
+    return None
 
 
 def _run_install(cmd: list[str], env: dict[str, str]) -> bool:

@@ -273,9 +273,9 @@ def main() -> None:
     untracked_names = [w.name for w in untracked]
 
     # ------------------------------------------------------------------
-    # Phase 4: Write Output
+    # Phase 5: Write Output
     # ------------------------------------------------------------------
-    print_phase_header(6, "Writing Combined Requirements", "▣")
+    print_phase_header(5, "Writing Combined Requirements", "▣")
     audit_report = AuditReport(
         untracked_wheels=untracked_names,
         conflict_causality=static_conflicts,
